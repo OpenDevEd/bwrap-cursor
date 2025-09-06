@@ -92,9 +92,10 @@ You can now use `bcursor` just as you would use the `cursor` command.
 
   * **Shared config directories for cursor with/without sandbox:** By design, the config directories for both sandboxed cursor and unsandboxed cursor are the same. Therefore, this sandboxing model is not suitable for testing e.g. extensions which you do not trust.
 
-Ah, that's a much more specific and practical question. Disabling D-Bus access for just the sandboxed Cursor application is a valid security-hardening step.
 
 ## Removing DBUS access
+
+Disabling D-Bus access for just the sandboxed Cursor application is a valid security-hardening step.
 
 ### How to Disable It
 
@@ -111,8 +112,6 @@ And change it to:
 ```bash
 # [ -S "${XDG_RT}/bus" ]        && env_args+=( --setenv DBUS_SESSION_BUS_ADDRESS "unix:path=${XDG_RT}/bus" )
 ```
-
------
 
 ### What to Expect (The Consequences)
 
@@ -138,6 +137,10 @@ By preventing Cursor from communicating with the desktop's "switchboard," the fo
 
 For most users, the convenience of desktop integration is worth the small risk, but if you're working in a high-security environment or with potentially untrusted code, disabling D-Bus is a reasonable step.
 
+## Separate config dirs
+
+Separate config dirs are possible, and the script could be amended to use a dedicated set of dirs (e.g., located in a `.cursor_home` directory or similar).
+
 ## Why not firejail?
 
-I started with `firejail` but couldn't make networking work. 
+I started with `firejail` but couldn't make networking work. It looked like the issue wasn't networking as such, but giving access to the right sets of directories for DNS to work.
