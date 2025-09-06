@@ -1,0 +1,54 @@
+#!/bin/bash
+# Firejail wrapper for Cursor .deb installation
+# Corrected to enable network access.
+
+set -e
+
+echo "WARNING - THIS FILE DOES NOT ACTUALLY ISOLATE YOUR FILESPACE!"
+
+CURSOR_EXEC="/usr/share/cursor/bin/cursor"
+SANDBOX_HOME="$HOME/.cursor"
+
+# Ensure the sandbox settings directory exists
+mkdir -p "$SANDBOX_HOME"
+
+# Default to opening the current directory if no args were given
+if [ $# -eq 0 ]; then
+  set -- .
+fi
+
+# Launch Cursor with internet access and other necessary permissions.
+firejail \
+  --noprofile \
+  --dbus-user=none \
+  --dbus-system=none \
+  --protocol=unix,inet,inet6,netlink \
+  --private-tmp \
+  --whitelist="$SANDBOX_HOME" \
+  --whitelist="$PWD" \
+  --whitelist="/usr/share/cursor" \
+  --whitelist="/etc/nsswitch.conf" \
+  --whitelist="/etc/hosts" \
+  --whitelist="/etc/resolv.conf" \
+  --whitelist="/run/systemd/resolve" \
+  --whitelist="/run/systemd/resolve/stub-resolv.conf" \
+  --whitelist="/run/systemd/resolve/resolv.conf" \
+  --whitelist="/run/systemd/resolve/io.systemd.Resolve" \
+  --whitelist="/etc/ssl" \
+  --whitelist="/etc/ca-certificates" \
+  --whitelist="/usr/share/ca-certificates" \
+  --whitelist="/etc/fonts" \
+  --whitelist="/usr/share/fonts" \
+  --whitelist="/tmp/.X11-unix" \
+  --whitelist="/run/user/${UID}" \
+  --whitelist="/run/dbus/system_bus_socket" \
+  --env=HOME="$SANDBOX_HOME" \
+  --env=GTK_IM_MODULE="xim" \
+  --env=QT_IM_MODULE="xim" \
+  --env=XMODIFIERS="@im=none" \
+  --env=IBUS_ADDRESS="" \
+  --env=DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+  "$CURSOR_EXEC" --no-sandbox "$@" &
+
+disown
+
