@@ -90,9 +90,11 @@ You can now use `bcursor` just as you would use the `cursor` command.
 
   * **D-Bus for Convenience:** This script allows access to the D-Bus by default. This is what allows Cursor to do things like open a native file-picker dialog or integrate with your system theme. While this presents a minor theoretical risk (a compromised app could ask other apps to do things), it is necessary for a good user experience. For maximum security, you can comment out the `DBUS_SESSION_BUS_ADDRESS` line in the script, but be aware this will degrade functionality.
 
+  * **Shared config directories for cursor with/without sandbox:** By design, the config directories for both sandboxed cursor and unsandboxed cursor are the same. Therefore, this sandboxing model is not suitable for testing e.g. extensions which you do not trust.
+
 Ah, that's a much more specific and practical question. Disabling D-Bus access for just the sandboxed Cursor application is a valid security-hardening step.
 
-## Removing DBUS
+## Removing DBUS access
 
 ### How to Disable It
 
@@ -112,7 +114,7 @@ And change it to:
 
 -----
 
-### \#\# What to Expect (The Consequences)
+### What to Expect (The Consequences)
 
 By preventing Cursor from communicating with the desktop's "switchboard," the following features will likely break or degrade:
 
@@ -128,10 +130,14 @@ By preventing Cursor from communicating with the desktop's "switchboard," the fo
 
   * **Desktop Notifications Won't Appear:** If any Cursor tasks or extensions try to send you a desktop notification (e.g., "Indexing complete"), it will fail silently.
 
-### \#\# The Trade-Off ⚖️
+### The Trade-Off ⚖️
 
   * **What You Gain (Security):** You eliminate the "Confused Deputy" attack vector. The sandboxed Cursor application can no longer ask other, unsandboxed applications to perform actions on its behalf. It becomes more strictly confined.
 
   * **What You Lose (Convenience):** You lose the seamless integration that makes an application feel like a part of the desktop.
 
 For most users, the convenience of desktop integration is worth the small risk, but if you're working in a high-security environment or with potentially untrusted code, disabling D-Bus is a reasonable step.
+
+## Why not firejail?
+
+I started with `firejail` but couldn't make networking work. 
