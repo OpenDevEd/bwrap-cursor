@@ -97,9 +97,9 @@ You can now use `bcursor` just as you would use the `cursor` command.
 
 Disabling D-Bus access for just the sandboxed Cursor application is a valid security-hardening step.
 
-### How to Disable It
+### A potential route for disabling DBUS
 
-To disable D-Bus access in your `bcursor.sh` script, you simply need to comment out or delete the line that sets the D-Bus environment variable.
+To disable D-Bus access in your `bcursor.sh` script, you can try to comment out or delete the line that sets the D-Bus environment variable.
 
 Find this line in the `Session env passthrough` section:
 
@@ -112,6 +112,8 @@ And change it to:
 ```bash
 # [ -S "${XDG_RT}/bus" ]        && env_args+=( --setenv DBUS_SESSION_BUS_ADDRESS "unix:path=${XDG_RT}/bus" )
 ```
+
+I haven't tested this, but it should disable DBUS access.
 
 ### What to Expect (The Consequences)
 
