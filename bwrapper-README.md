@@ -50,7 +50,7 @@ Help:
 # Create test directories
 mkdir path1 path2 
 
-# Run bash with isolated home
+# Run bash with normal sandboxing (no home isolation)
 ./bwrapper --exec bash path1 path2
 ```
 
@@ -376,8 +376,12 @@ args: []
 
 # Read-write paths (only what needs to be writable)
 rw_paths: []
-  - $HOME/.config/Cursor
-  - $HOME/.cache/Cursor
+  - $HOME/.config/Cursor      # Cursor settings and preferences
+  - $HOME/.cache/Cursor       # Cursor cache and temporary files
+  - $HOME/.local/share/Cursor # Cursor shared data and extensions
+  - $HOME/.local/state/Cursor # Cursor runtime state
+  - $HOME/.cache/fontconfig   # Font configuration cache
+  - $HOME/.cache/com.vercel.cli # Vercel CLI cache (used by Cursor)
 ```
 
 ## Configuration Options
