@@ -85,7 +85,8 @@ An early attempt using Firejail that was abandoned due to networking issues. The
 **Why Firejail was abandoned:**
 - Complex networking configuration requirements
 - Difficult to properly whitelist all necessary DNS resolution files
-- Less reliable than the bwrap approach
+
+It's worth noting though that similar networking issues arose with very restrictive `bcursor.sh` approaches. The solution was to move to read-only fs with bubblewrap.
 
 ## Usage
 
