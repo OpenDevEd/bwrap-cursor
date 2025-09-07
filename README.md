@@ -77,6 +77,8 @@ An alternative approach that creates a completely isolated home directory (`~/.c
 - Complete isolation from your regular Cursor configuration
 - May require reconfiguring extensions and settings
 
+See [bwrap_alternatives/README.md](bwrap_alternatives/README.md) for detailed information about this approach and potential improvements.
+
 ### Firejail Attempt (`do_not_use/firejail_cursor`)
 An early attempt using Firejail that was abandoned due to networking issues. The file is preserved for reference but should not be used.
 
@@ -171,7 +173,7 @@ For most users, the convenience of desktop integration is worth the small risk, 
 
 ## Separate config dirs
 
-Separate config dirs are possible, and the script could be amended to use a dedicated set of dirs (e.g., located in a `.cursor_home` directory or similar).
+Separate config dirs are possible, and the script could be amended to use a dedicated set of dirs (e.g., located in a `$HOME/.cursor_home` directory or similar).
 
 ## Why not firejail?
 
@@ -183,7 +185,8 @@ I started with `firejail` but encountered several issues that made it less suita
 bwrap-cursor/
 ├── bcursor.sh                           # Main implementation (shared config)
 ├── bwrap_alternatives/
-│   └── bcursor_uses_work.sh            # Alternative implementation (isolated config)
+│   ├── bcursor_uses_work.sh            # Alternative implementation (isolated config)
+│   └── README.md                       # Documentation about alternative approach
 ├── do_not_use/
 │   ├── firejail_cursor                 # Abandoned Firejail implementation
 │   └── README.md                       # Documentation about abandoned approaches
