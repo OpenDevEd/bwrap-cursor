@@ -20,13 +20,27 @@ my $edit_mode = 0;
 my $list_mode = 0;
 my $help_mode = 0;
 my $dryrun_mode = 0;
+my $save_mode = 0;
+my $executable = '';
+my @args = ();
+my @rw_paths = ();
+my %env_vars = ();
+my $home_path = '';
+my $work_path = '';
 
 GetOptions(
     'edit' => \$edit_mode,
     'list' => \$list_mode,
     'help' => \$help_mode,
     'h' => \$help_mode,
-    'dryrun' => \$dryrun_mode
+    'dryrun' => \$dryrun_mode,
+    'save' => \$save_mode,
+    'exec=s' => \$executable,
+    'arg=s' => \@args,
+    'rw=s' => \@rw_paths,
+    'env=s%' => \%env_vars,
+    'home=s' => \$home_path,
+    'work=s' => \$work_path
 );
 
 if ($help_mode) {
@@ -49,24 +63,62 @@ if ($edit_mode) {
 }
 
 # Main execution
-my $config_name = shift @ARGV;
-if (!$config_name) {
-    die "Error: Configuration name required\nUsage: $0 <config> [files...]\n";
+# Check if we have CLI options instead of a config file
+if ($executable) {
+    # Validate that other CLI options are only used with --exec
+    if ((@args || @rw_paths || %env_vars || $save_mode || $home_path || $work_path) && !$executable) {
+        die "Error: --arg, --rw, --env, --save, --home, and --work options require --exec\n";
+    }
+    
+    my $config_name = shift @ARGV;  # This will be the config name for --save
+    my @files = @ARGV;
+    
+    if ($save_mode) {
+        # Save CLI options as configuration
+        save_cli_options_as_config($config_name, $executable, \@args, \@rw_paths, \%env_vars, $home_path, $work_path);
+    } else {
+        # Use CLI options directly
+        run_with_cli_options($executable, \@args, \@rw_paths, \%env_vars, $home_path, $work_path, $dryrun_mode, @files);
+    }
+} else {
+    # Use configuration file mode
+    my $config_name = shift @ARGV;
+    my @files = @ARGV;
+    
+    if (!$config_name) {
+        die "Error: Configuration name required\nUsage: $0 <config> [files...] OR $0 --exec <program> [options] [files...]\n";
+    }
+    
+    # Validate that CLI options are not used in config mode
+    if (@args || @rw_paths || %env_vars || $save_mode || $home_path || $work_path) {
+        die "Error: --arg, --rw, --env, --save, --home, and --work options cannot be used with configuration files\n";
+    }
+    
+    run_with_configuration($config_name, @files, $dryrun_mode);
 }
-
-my @files = @ARGV;
-run_with_configuration($config_name, @files, $dryrun_mode);
 
 sub show_help {
     print <<'EOF';
 bwrapper — Generic bwrap sandboxing helper with configuration support
 
 Usage:
-  bwrapper <config> [files...]  # Run with configuration (supports multiple files/projects)
-  bwrapper --edit <config>      # Edit configuration
-  bwrapper --list               # List available configurations
-  bwrapper --dryrun <config>    # Show the command that would be executed
-  bwrapper --help               # Show this help
+  bwrapper <config> [files...]                    # Run with configuration file
+  bwrapper --exec <program> [options] [files...]  # Run with command-line options
+  bwrapper --exec <program> --save <config> [options] # Save CLI options as configuration
+  bwrapper --edit <config>                        # Edit configuration
+  bwrapper --list                                 # List available configurations
+  bwrapper --dryrun <config>                      # Show the command that would be executed
+  bwrapper --help                                 # Show this help
+
+Command-line options (when using --exec):
+  --exec <program>     # Program to execute in the sandbox
+  --arg <argument>     # Add argument to pass to the program (can be used multiple times)
+  --rw <path>          # Add read-write path to bind (can be used multiple times)
+  --env <key=value>    # Set environment variable (can be used multiple times)
+  --home <path>        # Use custom home directory (isolates $HOME)
+  --work <path>        # Mount files under work subdirectory (requires --home)
+  --save <config>      # Save CLI options as configuration file
+  --dryrun             # Show the command that would be executed
 
 Configuration files are stored in ./configurations/
 Each configuration file should contain:
@@ -81,7 +133,23 @@ The script provides sensible defaults for:
 - X11 and GPU passthrough
 - Security checks
 
-Example minimal configuration:
+Examples:
+  # Using configuration file:
+  bwrapper cursor /path/to/project
+
+  # Using command-line options:
+  bwrapper --exec /usr/bin/cursor --arg=-a --arg=-b --rw=$HOME/.config/Cursor --rw=$HOME/.cache/Cursor /path/to/project
+
+  # Using custom home directory:
+  bwrapper --exec /usr/bin/cursor --home ~/NEW_HOME /path/to/project
+
+  # Using custom home with work subdirectory:
+  bwrapper --exec /usr/bin/cursor --home ~/NEW_HOME --work WORK /path/to/project
+
+  # Save CLI options as configuration:
+  bwrapper --exec /usr/bin/cursor --arg=-a --arg=-b --rw=$HOME/.config/Cursor --save myconfig
+
+  # Minimal configuration file:
   executable: /usr/bin/cursor
   args: []
   rw_paths:
@@ -132,10 +200,14 @@ sub load_configuration {
     
     while (my $line = <$fh>) {
         chomp $line;
-        $line =~ s/^\s+//;  # Remove leading whitespace
-        next if $line =~ /^#/ || $line eq '';  # Skip comments and empty lines
+        next if $line =~ /^#/ || $line =~ /^\s*$/;  # Skip comments and empty lines
         
-        if ($line =~ /^(\w+):\s*(.*)$/) {
+        # Check if this is an indented line (hash entry)
+        if ($line =~ /^\s+(\w+):\s*(.+)$/ && $current_section eq 'hash') {
+            $current_hash->{$1} = $2;
+        } elsif ($line =~ /^-\s*(.+)$/ && $current_section eq 'array') {
+            push @$current_array, $1;
+        } elsif ($line =~ /^(\w+):\s*(.*)$/) {
             my ($key, $value) = ($1, $2);
             
             if ($value eq '[]') {
@@ -150,10 +222,6 @@ sub load_configuration {
                 $config->{$key} = $value;
                 $current_section = '';
             }
-        } elsif ($line =~ /^-\s*(.+)$/ && $current_section eq 'array') {
-            push @$current_array, $1;
-        } elsif ($line =~ /^(\w+):\s*(.+)$/ && $current_section eq 'hash') {
-            $current_hash->{$1} = $2;
         }
     }
     
@@ -175,14 +243,181 @@ sub check_not_root_dirs {
     }
 }
 
-sub run_with_configuration {
-    my $config_name = shift;
+sub validate_distinct_final_dirs {
+    my $home_path = shift;
+    my $work_path = shift;
     my @files = @_;
-    my $dryrun = pop @files;  # Last parameter is dryrun flag
     
-    my $config = load_configuration($config_name);
+    return if @files == 0;  # No files to validate
     
-    # Determine project path and targets
+    my %final_dirs;
+    
+    foreach my $file (@files) {
+        my $abs_file = resolve_abs_path($file);
+        my $final_dir;
+        
+        if ($home_path) {
+            # Calculate the final directory path within the home directory
+            if ($work_path) {
+                $final_dir = "$home_path/$work_path/" . basename($abs_file);
+            } else {
+                $final_dir = "$home_path/" . basename($abs_file);
+            }
+        } else {
+            # Use the original directory
+            $final_dir = -d $abs_file ? $abs_file : dirname($abs_file);
+        }
+        
+        if (exists $final_dirs{$final_dir}) {
+            die "Error: Final directories would not be distinct: '$final_dir' (from '$file' and '$final_dirs{$final_dir}')\n";
+        }
+        $final_dirs{$final_dir} = $file;
+    }
+}
+
+sub setup_bwrap_environment {
+    my $project_path = shift;
+    my $rw_paths_ref = shift;
+    my $env_vars_ref = shift;
+    my $additional_bwrap_args_ref = shift;
+    my $home_path = shift;
+    my $work_path = shift;
+    my $dryrun = shift;
+    my $files_ref = shift;
+    my @files = @$files_ref;
+    
+    # Run security checks (always enabled by default)
+    check_not_root_dirs($project_path);
+    
+    # Validate distinct final directories if home isolation is used
+    if ($home_path) {
+        validate_distinct_final_dirs($home_path, $work_path, @files);
+    }
+    
+    # Setup runtime environment
+    my $uid = $>;
+    my $xdg_rt = $ENV{XDG_RUNTIME_DIR} || "/run/user/$uid";
+    
+    make_path($xdg_rt) unless -d $xdg_rt;
+    chmod 0700, $xdg_rt;
+    
+    # Build bwrap arguments with sensible defaults
+    my @bwrap_args = (
+        '--ro-bind', '/', '/',  # Show entire host read-only
+        '--proc', '/proc',
+        '--dev', '/dev',
+        '--tmpfs', '/tmp',
+        '--bind', $xdg_rt, $xdg_rt
+    );
+    
+    # Add home isolation if specified
+    if ($home_path) {
+        # Expand environment variables in home path
+        $home_path =~ s/\$(\w+)/$ENV{$1}/g;
+        $home_path = resolve_abs_path($home_path);
+        
+        # Create home directory if it doesn't exist (only if not in dryrun mode)
+        unless ($dryrun_mode) {
+            make_path($home_path) unless -d $home_path;
+        }
+        
+        # Set up home isolation
+        push @bwrap_args, '--tmpfs', '/home';
+        push @bwrap_args, '--dir', '/home';
+        push @bwrap_args, '--bind', $home_path, '/home/app';
+        push @bwrap_args, '--setenv', 'HOME', '/home/app';
+        
+        # Mount files in the home directory
+        if (@files) {
+            foreach my $file (@files) {
+                my $abs_file = resolve_abs_path($file);
+                my $mount_point;
+                
+                if ($work_path) {
+                    # Mount under work subdirectory
+                    my $work_dir = "/home/app/$work_path";
+                    push @bwrap_args, '--dir', $work_dir;
+                    $mount_point = "$work_dir/" . basename($abs_file);
+                } else {
+                    # Mount directly in home
+                    $mount_point = "/home/app/" . basename($abs_file);
+                }
+                
+                push @bwrap_args, '--bind', $abs_file, $mount_point;
+            }
+        }
+        
+        # Set working directory to the first file's location or work directory
+        if (@files) {
+            my $first_file = resolve_abs_path($files[0]);
+            my $work_dir = $work_path ? "/home/app/$work_path" : "/home/app";
+            push @bwrap_args, '--chdir', "$work_dir/" . basename($first_file);
+        } else {
+            my $work_dir = $work_path ? "/home/app/$work_path" : "/home/app";
+            push @bwrap_args, '--chdir', $work_dir;
+        }
+    } else {
+        # Normal mode - bind project path
+        push @bwrap_args, '--bind', $project_path, $project_path;
+        push @bwrap_args, '--chdir', $project_path;
+    }
+    
+    # Add configured read-write paths
+    if ($rw_paths_ref && @$rw_paths_ref) {
+        foreach my $path (@$rw_paths_ref) {
+            # Expand environment variables
+            $path =~ s/\$(\w+)/$ENV{$1}/g;
+            push @bwrap_args, '--bind', $path, $path;
+        }
+    }
+    
+    # Add additional bwrap arguments if specified
+    if ($additional_bwrap_args_ref && @$additional_bwrap_args_ref) {
+        push @bwrap_args, @$additional_bwrap_args_ref;
+    }
+    
+    # Add X11 socket if present
+    if (-d '/tmp/.X11-unix') {
+        push @bwrap_args, '--ro-bind', '/tmp/.X11-unix', '/tmp/.X11-unix';
+    }
+    
+    # Add GPU passthrough
+    if (-d '/dev/dri') {
+        push @bwrap_args, '--bind', '/dev/dri', '/dev/dri';
+    }
+    for my $nvidia_dev (qw(/dev/nvidiactl /dev/nvidia0 /dev/nvidia-uvm /dev/nvidia-uvm-tools)) {
+        if (-e $nvidia_dev) {
+            push @bwrap_args, '--bind', $nvidia_dev, $nvidia_dev;
+        }
+    }
+    
+    # Add environment variables (with sensible defaults)
+    if (defined $ENV{DISPLAY}) {
+        push @bwrap_args, '--setenv', 'DISPLAY', $ENV{DISPLAY};
+    }
+    if (defined $ENV{WAYLAND_DISPLAY}) {
+        push @bwrap_args, '--setenv', 'WAYLAND_DISPLAY', $ENV{WAYLAND_DISPLAY};
+    }
+    if (-S "$xdg_rt/bus") {
+        push @bwrap_args, '--setenv', 'DBUS_SESSION_BUS_ADDRESS', "unix:path=$xdg_rt/bus";
+    }
+    push @bwrap_args, '--setenv', 'XDG_RUNTIME_DIR', $xdg_rt;
+    
+    # Add custom environment variables if specified
+    if ($env_vars_ref && %$env_vars_ref) {
+        foreach my $key (keys %$env_vars_ref) {
+            my $value = $env_vars_ref->{$key};
+            $value =~ s/\$(\w+)/$ENV{$1}/g;
+            push @bwrap_args, '--setenv', $key, $value;
+        }
+    }
+    
+    return @bwrap_args;
+}
+
+sub determine_project_path_and_targets {
+    my @files = @_;
+    
     my $project_path;
     my @targets;
     
@@ -202,96 +437,168 @@ sub run_with_configuration {
         @targets = @files;
     }
     
-    # Run security checks (always enabled by default)
-    check_not_root_dirs($project_path);
+    return ($project_path, @targets);
+}
+
+sub execute_bwrap_command {
+    my $executable = shift;
+    my $bwrap_args_ref = shift;
+    my $exec_args_ref = shift;
+    my $dryrun = shift;
     
-    # Setup runtime environment
-    my $uid = $>;
-    my $xdg_rt = $ENV{XDG_RUNTIME_DIR} || "/run/user/$uid";
+    # Execute or show command
+    if ($dryrun) {
+        print "bwrap \\\n";
+        foreach my $arg (@$bwrap_args_ref) {
+            print "  \"$arg\" \\\n";
+        }
+        print "  -- $executable";
+        foreach my $arg (@$exec_args_ref) {
+            print " \"$arg\"";
+        }
+        print "\n";
+    } else {
+        exec 'bwrap', @$bwrap_args_ref, '--', $executable, @$exec_args_ref;
+    }
+}
+
+sub run_with_configuration {
+    my $config_name = shift;
+    my @files = @_;
+    my $dryrun = pop @files;  # Last parameter is dryrun flag
     
-    make_path($xdg_rt) unless -d $xdg_rt;
-    chmod 0700, $xdg_rt;
+    my $config = load_configuration($config_name);
     
-    # Build bwrap arguments with sensible defaults
-    my @bwrap_args = (
-        '--ro-bind', '/', '/',  # Show entire host read-only
-        '--proc', '/proc',
-        '--dev', '/dev',
-        '--tmpfs', '/tmp',
-        '--bind', $xdg_rt, $xdg_rt,
-        '--bind', $project_path, $project_path
+    # Determine project path and targets
+    my ($project_path, @targets) = determine_project_path_and_targets(@files);
+    
+    # Setup bwrap environment using shared logic
+    my @bwrap_args = setup_bwrap_environment(
+        $project_path,
+        $config->{rw_paths},
+        $config->{env_vars},
+        $config->{additional_bwrap_args},
+        $config->{home_path},
+        $config->{work_path},
+        $dryrun,
+        \@files
     );
-    
-    # Add configured read-write paths (renamed from bind_paths for clarity)
-    if ($config->{rw_paths}) {
-        foreach my $path (@{$config->{rw_paths}}) {
-            # Expand environment variables
-            $path =~ s/\$(\w+)/$ENV{$1}/g;
-            push @bwrap_args, '--bind', $path, $path;
-        }
-    }
-    
-    # Add additional bwrap arguments if specified
-    if ($config->{additional_bwrap_args}) {
-        push @bwrap_args, @{$config->{additional_bwrap_args}};
-    }
-    
-    # Add X11 socket if present
-    if (-d '/tmp/.X11-unix') {
-        push @bwrap_args, '--ro-bind', '/tmp/.X11-unix', '/tmp/.X11-unix';
-    }
-    
-    # Add GPU passthrough
-    if (-d '/dev/dri') {
-        push @bwrap_args, '--bind', '/dev/dri', '/dev/dri';
-    }
-    for my $nvidia_dev (qw(/dev/nvidiactl /dev/nvidia0 /dev/nvidia-uvm /dev/nvidia-uvm-tools)) {
-        if (-e $nvidia_dev) {
-            push @bwrap_args, '--bind', $nvidia_dev, $nvidia_dev;
-        }
-    }
-    
-    # Add environment variables (with sensible defaults) - match bcursor.sh order
-    if (defined $ENV{DISPLAY}) {
-        push @bwrap_args, '--setenv', 'DISPLAY', $ENV{DISPLAY};
-    }
-    if (defined $ENV{WAYLAND_DISPLAY}) {
-        push @bwrap_args, '--setenv', 'WAYLAND_DISPLAY', $ENV{WAYLAND_DISPLAY};
-    }
-    if (-S "$xdg_rt/bus") {
-        push @bwrap_args, '--setenv', 'DBUS_SESSION_BUS_ADDRESS', "unix:path=$xdg_rt/bus";
-    }
-    push @bwrap_args, '--setenv', 'XDG_RUNTIME_DIR', $xdg_rt;
-    
-    # Add custom environment variables if specified
-    if ($config->{env_vars}) {
-        foreach my $key (keys %{$config->{env_vars}}) {
-            my $value = $config->{env_vars}->{$key};
-            $value =~ s/\$(\w+)/$ENV{$1}/g;
-            push @bwrap_args, '--setenv', $key, $value;
-        }
-    }
-    
-    # Add chdir at the end to match bcursor.sh
-    push @bwrap_args, '--chdir', $project_path;
     
     # Build command
     my $executable = $config->{executable};
     my @exec_args = @{$config->{args} || []};
     push @exec_args, @targets;
     
-    # Execute or show command
-    if ($dryrun) {
-        print "bwrap \\\n";
-        foreach my $arg (@bwrap_args) {
-            print "  \"$arg\" \\\n";
-        }
-        print "  -- $executable";
-        foreach my $arg (@exec_args) {
-            print " \"$arg\"";
-        }
-        print "\n";
-    } else {
-        exec 'bwrap', @bwrap_args, '--', $executable, @exec_args;
+    # Execute command using shared logic
+    execute_bwrap_command($executable, \@bwrap_args, \@exec_args, $dryrun);
+}
+
+sub run_with_cli_options {
+    my $executable = shift;
+    my $args_ref = shift;
+    my $rw_paths_ref = shift;
+    my $env_vars_ref = shift;
+    my $home_path = shift;
+    my $work_path = shift;
+    my $dryrun = shift;  # Dryrun flag is a separate parameter
+    my @files = @_;
+    
+    # Determine project path and targets
+    my ($project_path, @targets) = determine_project_path_and_targets(@files);
+    
+    # Setup bwrap environment using shared logic
+    my @bwrap_args = setup_bwrap_environment(
+        $project_path,
+        $rw_paths_ref,
+        $env_vars_ref,
+        undef,  # No additional bwrap args for CLI mode
+        $home_path,
+        $work_path,
+        $dryrun,
+        \@files  # Pass original files for home isolation as reference
+    );
+    
+    # Build command
+    my @exec_args = @$args_ref;
+    push @exec_args, @targets;
+    
+    # Execute command using shared logic
+    execute_bwrap_command($executable, \@bwrap_args, \@exec_args, $dryrun);
+}
+
+sub save_cli_options_as_config {
+    my $config_name = shift;
+    my $executable = shift;
+    my $args_ref = shift;
+    my $rw_paths_ref = shift;
+    my $env_vars_ref = shift;
+    my $home_path = shift;
+    my $work_path = shift;
+    
+    unless ($config_name) {
+        die "Error: Configuration name required when using --save\nUsage: $0 --exec <program> --save <config_name> [options]\n";
     }
+    
+    my $config_file = "$CONFIG_DIR/$config_name.conf";
+    
+    # Ensure config directory exists
+    make_path($CONFIG_DIR) unless -d $CONFIG_DIR;
+    
+    # Check if config file already exists
+    if (-f $config_file) {
+        print "Warning: Configuration file $config_file already exists.\n";
+        print "Do you want to overwrite it? (y/N): ";
+        my $response = <STDIN>;
+        chomp $response;
+        unless ($response =~ /^[yY]/) {
+            print "Aborted.\n";
+            exit 0;
+        }
+    }
+    
+    # Write configuration file
+    open my $fh, '>', $config_file or die "Cannot write $config_file: $!\n";
+    
+    print $fh "# Configuration saved from command-line options\n";
+    print $fh "# Generated on " . scalar localtime() . "\n\n";
+    
+    print $fh "executable: $executable\n";
+    
+    if (@$args_ref) {
+        print $fh "args: []\n";
+        foreach my $arg (@$args_ref) {
+            print $fh "  - $arg\n";
+        }
+    } else {
+        print $fh "args: []\n";
+    }
+    
+    if (@$rw_paths_ref) {
+        print $fh "rw_paths: []\n";
+        foreach my $path (@$rw_paths_ref) {
+            print $fh "  - $path\n";
+        }
+    } else {
+        print $fh "rw_paths: []\n";
+    }
+    
+    if (%$env_vars_ref) {
+        print $fh "env_vars: {}\n";
+        foreach my $key (sort keys %$env_vars_ref) {
+            print $fh "  $key: $env_vars_ref->{$key}\n";
+        }
+    }
+    
+    if ($home_path) {
+        print $fh "home_path: $home_path\n";
+    }
+    
+    if ($work_path) {
+        print $fh "work_path: $work_path\n";
+    }
+    
+    close $fh;
+    
+    print "Configuration saved to: $config_file\n";
+    print "You can now use: $0 $config_name [files...]\n";
 }
