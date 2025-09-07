@@ -8,10 +8,9 @@ The primary goal is to provide peace of mind. You can leverage Cursor's powerful
 
 `bwrapper` is a shell script that can wrap an application in the same way, via a profile-based mechanism, see [bwrapper-README.md](bwrapper-README.md).
 
+## The Rationale: Containing the AI engines
 
-## The Rationale: Containing AI's Power
-
-Integration of AI in software development has brought significant changes. AI is capable of understanding and executing complex commands like "refactor this module" or "remove all unused dependencies from the project." The open architecture of VSCODE has given rise to AI plugins for VSCODE, as well as forks of VSCODE like cursor. While the use of AI is incredibly powerful, this also introduces a new risk: ambiguity and malfunction.
+Integration of AI in software development has brought significant changes. AI is capable of understanding and executing complex commands like "refactor this module" or "remove all unused dependencies from the project." The open architecture of VS Code has given rise to AI plugins for VS Code, as well as forks of VS Code like cursor. While the use of AI is powerful, this also introduces a new risk: ambiguity and malfunction.
 
 An AI might misinterpret a broad command. A request to "clean up the project" could, in a worst-case scenario, be misinterpreted and lead to the deletion of important files in a parent directory, your home folder, or elsewhere on the system if the application has unrestricted filesystem access.
 
