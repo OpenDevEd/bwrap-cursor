@@ -308,7 +308,7 @@ run_all_tests() {
     setup_test_environment
     
     # Change to the bwrapper directory
-    cd REPLACED_WITH_DYNAMIC_PATH/development/git/bwrap-cursor
+    cd "$(dirname "$(dirname "$(realpath "$0")")")"
     
     # Run all test categories
     test_basic_functionality
