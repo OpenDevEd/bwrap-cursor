@@ -205,7 +205,7 @@ sub load_configuration {
         # Check if this is an indented line (hash entry)
         if ($line =~ /^\s+(\w+):\s*(.+)$/ && $current_section eq 'hash') {
             $current_hash->{$1} = $2;
-        } elsif ($line =~ /^-\s*(.+)$/ && $current_section eq 'array') {
+        } elsif ($line =~ /^\s*-\s*(.+)$/ && $current_section eq 'array') {
             push @$current_array, $1;
         } elsif ($line =~ /^(\w+):\s*(.*)$/) {
             my ($key, $value) = ($1, $2);
