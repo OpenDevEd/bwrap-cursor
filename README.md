@@ -175,7 +175,7 @@ Separate config dirs are possible, and the script could be amended to use a dedi
 
 ## Why not firejail?
 
-I started with `firejail` but encountered several issues that made it less suitable for this use case. The bwrap approach is simpler, more reliable, and provides better security isolation with less configuration complexity. See `do_not_use/README.md` for detailed information about the Firejail attempt and why it was abandoned.
+I started with `firejail` but encountered several issues that made it less suitable for this use case. The bwrap approach is simpler, more reliable, and provides better security isolation with less configuration complexity. See [do_not_use/README.md](do_not_use/README.md) for detailed information about the Firejail attempt and why it was abandoned.
 
 ## Repository Structure
 
