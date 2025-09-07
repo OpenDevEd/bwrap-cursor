@@ -2,7 +2,7 @@
 
 # bcursor: Run the Cursor Editor in a Secure Sandbox
 
-`bcursor` is a shell script that launches the AI-native [Cursor](https://cursor.sh/) code editor within a secure, isolated filesystem sandbox using `bubblewrap` (`bwrap`).
+`bcursor` is a shell script for Ubuntu/Linux that launches the AI-native [Cursor](https://cursor.sh/) code editor within a secure, isolated filesystem sandbox using `bubblewrap` (`bwrap`).
 
 The primary goal is to provide peace of mind. You can leverage Cursor's powerful AI features for code generation and refactoring with confidence, knowing that the application is restricted from making accidental or unwanted changes to files outside of your specified project directory.
 
@@ -41,10 +41,10 @@ An AI might misinterpret a broad command. A request to "clean up the project" co
 
 ## Prerequisites
 
-Before using `bcursor`, you need to have the following software installed:
+This tool is designed for Ubuntu/Linux systems. Before using `bcursor`, you need to have the following software installed:
 
   * **Cursor:** The script assumes the `cursor` executable is available at `/usr/bin/cursor`.
-  * **Bubblewrap:** The core sandboxing tool. You can install it on most distributions via the package manager (e.g., `sudo apt install bubblewrap` on Debian/Ubuntu, `sudo dnf install bubblewrap` on Fedora).
+  * **Bubblewrap:** The core sandboxing tool. You can install it on most Linux distributions via the package manager (e.g., `sudo apt install bubblewrap` on Debian/Ubuntu, `sudo dnf install bubblewrap` on Fedora).
   * **coreutils:** The script uses `realpath` or `readlink` to resolve file paths, which are standard system utilities.
 
 ## Installation
