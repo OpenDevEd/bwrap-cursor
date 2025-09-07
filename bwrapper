@@ -36,8 +36,8 @@ GetOptions(
     'dryrun' => \$dryrun_mode,
     'save' => \$save_mode,
     'exec=s' => \$executable,
-    'arg=s' => \@args,
-    'rw=s' => \@rw_paths,
+    'arg=s@' => \@args,
+    'rw=s@' => \@rw_paths,
     'env=s%' => \%env_vars,
     'home=s' => \$home_path,
     'work=s' => \$work_path
