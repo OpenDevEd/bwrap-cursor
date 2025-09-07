@@ -61,6 +61,30 @@ Before using `bcursor`, you need to have the following software installed:
     sudo mv bcursor.sh /usr/local/bin/bcursor
     ```
 
+## Alternative Implementations
+
+This repository contains multiple approaches to sandboxing Cursor:
+
+### Main Implementation (`bcursor.sh`)
+The primary implementation that mounts your project directory as read-write while keeping the rest of the filesystem read-only. This approach shares Cursor's configuration with your regular (non-sandboxed) installation.
+
+### Alternative Implementation (`bwrap_alternatives/bcursor_uses_work.sh`)
+An alternative approach that creates a completely isolated home directory (`~/.cursor`) for the sandboxed Cursor instance. The project directory is mounted at `/home/app/work` within the sandbox. This provides stronger isolation but requires separate configuration management.
+
+**Key differences:**
+- Uses `~/.cursor` as the sandboxed home directory
+- Project is mounted at `/home/app/work` instead of the original path
+- Complete isolation from your regular Cursor configuration
+- May require reconfiguring extensions and settings
+
+### Firejail Attempt (`do_not_use/firejail_cursor`)
+An early attempt using Firejail that was abandoned due to networking issues. The file is preserved for reference but should not be used.
+
+**Why Firejail was abandoned:**
+- Complex networking configuration requirements
+- Difficult to properly whitelist all necessary DNS resolution files
+- Less reliable than the bwrap approach
+
 ## Usage
 
 You can now use `bcursor` just as you would use the `cursor` command.
@@ -86,11 +110,15 @@ You can now use `bcursor` just as you would use the `cursor` command.
 
 ## Security Considerations & Trade-offs
 
-  * **⚠️ Do Not Sandbox High-Level Directories:** The security model relies on you providing a specific project path. Running `bcursor /` or `bcursor ~` will make your entire filesystem or home directory writable, respectively, completely defeating the purpose of the sandbox.
+  * **⚠️ Do Not Sandbox High-Level Directories:** The security model relies on you providing a specific project path. The script includes built-in protection against running on high-level directories. It will refuse to run if you attempt to use `/`, `/usr`, `/etc`, or your home directory (`$HOME`) as the project path, as this would defeat the purpose of the sandbox.
 
   * **D-Bus for Convenience:** This script allows access to the D-Bus by default. This is what allows Cursor to do things like open a native file-picker dialog or integrate with your system theme. While this presents a minor theoretical risk (a compromised app could ask other apps to do things), it is necessary for a good user experience. For maximum security, you can comment out the `DBUS_SESSION_BUS_ADDRESS` line in the script, but be aware this will degrade functionality.
 
   * **Shared config directories for cursor with/without sandbox:** By design, the config directories for both sandboxed cursor and unsandboxed cursor are the same. Therefore, this sandboxing model is not suitable for testing e.g. extensions which you do not trust.
+
+  * **GPU Passthrough:** The script automatically detects and passes through GPU devices (`/dev/dri`, NVIDIA devices) for hardware acceleration. This is necessary for smooth performance but grants the sandboxed application access to GPU resources.
+
+  * **X11/Wayland Access:** The script passes through display server sockets and environment variables, which is necessary for GUI functionality but allows the sandboxed application to interact with your display system.
 
 
 ## Removing DBUS access
@@ -145,4 +173,23 @@ Separate config dirs are possible, and the script could be amended to use a dedi
 
 ## Why not firejail?
 
-I started with `firejail` but couldn't make networking work. It looked like the issue wasn't networking as such, but giving access to the right sets of directories for DNS to work.
+I started with `firejail` but encountered several issues that made it less suitable for this use case. The bwrap approach is simpler, more reliable, and provides better security isolation with less configuration complexity. See `do_not_use/README.md` for detailed information about the Firejail attempt and why it was abandoned.
+
+## Repository Structure
+
+```
+bwrap-cursor/
+├── bcursor.sh                           # Main implementation (shared config)
+├── bwrap_alternatives/
+│   └── bcursor_uses_work.sh            # Alternative implementation (isolated config)
+├── do_not_use/
+│   ├── firejail_cursor                 # Abandoned Firejail implementation
+│   └── README.md                       # Documentation about abandoned approaches
+├── .cursorignore                       # Cursor IDE ignore file
+├── .gitignore                          # Git ignore file
+└── README.md                           # This file
+```
+
+- **`bcursor.sh`**: The primary script that most users should use
+- **`bwrap_alternatives/`**: Contains alternative implementations with different security models
+- **`do_not_use/`**: Contains experimental or abandoned implementations for reference
