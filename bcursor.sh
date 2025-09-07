@@ -4,6 +4,8 @@
 #   bcursor                # opens $PWD
 #   bcursor <dir>          # opens <dir>
 #   bcursor <path/to/file> # opens parent dir, focuses file
+#   bcursor <file1> <file2> <project> # opens multiple files/projects
+#   bcursor --dryrun       # shows the command that would be executed
 
 set -euo pipefail
 
@@ -16,24 +18,28 @@ resolve_abs() {
   fi
 }
 
-# ---- parse arg (0 or 1 allowed) ----
-if [ "$#" -gt 1 ]; then
-  echo "bcursor: expected 0 or 1 argument (project dir or file). Got $#." >&2
-  exit 2
+# ---- parse args ----
+DRYRUN=0
+if [ "$#" -gt 0 ] && [ "$1" = "--dryrun" ]; then
+  DRYRUN=1
+  shift
 fi
 
+# Handle multiple arguments
 if [ "$#" -eq 0 ]; then
   PROJECT_PATH="$(pwd)"
-  CURSOR_TARGET="$PROJECT_PATH"
+  CURSOR_TARGETS=("$PROJECT_PATH")
 else
-  ARG_ABS="$(resolve_abs "$1")"
-  if [ -d "$ARG_ABS" ]; then
-    PROJECT_PATH="$ARG_ABS"
-    CURSOR_TARGET="$ARG_ABS"
+  # Use the first file/directory to determine the project path
+  FIRST_ARG_ABS="$(resolve_abs "$1")"
+  if [ -d "$FIRST_ARG_ABS" ]; then
+    PROJECT_PATH="$FIRST_ARG_ABS"
   else
-    PROJECT_PATH="$(dirname "$ARG_ABS")"
-    CURSOR_TARGET="$ARG_ABS"
+    PROJECT_PATH="$(dirname "$FIRST_ARG_ABS")"
   fi
+  
+  # All arguments become targets
+  CURSOR_TARGETS=("$@")
 fi
 
 # ---- (add this after the argument parsing block) ----
@@ -57,7 +63,8 @@ mkdir -p -- \
   "$HOME/.cache/Cursor" \
   "$HOME/.local/share/Cursor" \
   "$HOME/.local/state/Cursor" \
-  "$HOME/.cache/fontconfig"
+  "$HOME/.cache/fontconfig" \
+  "$HOME/.cache/com.vercel.cli"
 
 # Session env passthrough
 env_args=()
@@ -86,6 +93,7 @@ args=(
   --bind "$HOME/.local/share/Cursor" "$HOME/.local/share/Cursor"
   --bind "$HOME/.local/state/Cursor" "$HOME/.local/state/Cursor"
   --bind "$HOME/.cache/fontconfig" "$HOME/.cache/fontconfig"
+  --bind "$HOME/.cache/com.vercel.cli" "$HOME/.cache/com.vercel.cli"
 
   --chdir "$PROJECT_PATH"
 )
@@ -100,7 +108,22 @@ for n in /dev/nvidiactl /dev/nvidia0 /dev/nvidia-uvm /dev/nvidia-uvm-tools; do
 done
 
 # ---- run Cursor ----
-exec bwrap \
-  "${args[@]}" \
-  "${env_args[@]}" \
-  -- /usr/bin/cursor "$CURSOR_TARGET"
+if [ "$DRYRUN" -eq 1 ]; then
+  echo "bwrap \\"
+  for arg in "${args[@]}"; do
+    echo "  \"$arg\" \\"
+  done
+  for arg in "${env_args[@]}"; do
+    echo "  \"$arg\" \\"
+  done
+  echo -n "  -- /usr/bin/cursor"
+  for target in "${CURSOR_TARGETS[@]}"; do
+    echo -n " \"$target\""
+  done
+  echo
+else
+  exec bwrap \
+    "${args[@]}" \
+    "${env_args[@]}" \
+    -- /usr/bin/cursor "${CURSOR_TARGETS[@]}"
+fi

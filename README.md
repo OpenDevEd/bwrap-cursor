@@ -6,7 +6,8 @@
 
 The primary goal is to provide peace of mind. You can leverage Cursor's powerful AI features for code generation and refactoring with confidence, knowing that the application is restricted from making accidental or unwanted changes to files outside of your specified project directory.
 
------
+`bwrapper` is a shell script that can wrap an application in the same way, via a profile-based mechanism, see [bwrapper-README.md](bwrapper-README.md).
+
 
 ## The Rationale: Containing AI's Power
 
@@ -38,6 +39,10 @@ An AI might misinterpret a broad command. A request to "clean up the project" co
   * **💾 State Persistence:** All your Cursor settings, themes, and extensions are saved and loaded normally.
   * **🚀 Hardware Accelerated:** Supports GPU passthrough (`/dev/dri`, NVIDIA) for a smooth, native-like performance.
   * **💻 Seamless Workflow:** Acts as a drop-in replacement for the standard `cursor` command, supporting file and directory arguments.
+  * **📁 Multiple Files/Projects:** Support for opening multiple files and projects simultaneously.
+  * **🔧 Configuration-based:** Generic helper supports any application with simple configuration files.
+  * **👀 Dryrun Support:** Preview bwrap commands before execution to verify sandboxing behavior.
+  * **✅ Verification Tools:** Built-in comparison script to ensure different implementations produce identical results.
 
 ## Prerequisites
 
@@ -61,12 +66,44 @@ This tool is designed for Ubuntu/Linux systems. Before using `bcursor`, you need
     sudo mv bcursor.sh /usr/local/bin/bcursor
     ```
 
-## Alternative Implementations
+## Implementations
 
 This repository contains multiple approaches to sandboxing Cursor:
 
 ### Main Implementation (`bcursor.sh`)
 The primary implementation that mounts your project directory as read-write while keeping the rest of the filesystem read-only. This approach shares Cursor's configuration with your regular (non-sandboxed) installation.
+
+**Features:**
+- Supports multiple files/projects as arguments
+- Includes `--dryrun` option to preview the bwrap command
+- Minimal configuration required
+
+### Generic Sandboxing Helper (`bwrapper`)
+A Perl-based generic sandboxing helper that uses configuration files to define how applications should be sandboxed. This provides the same functionality as `bcursor.sh` but with much more flexibility.
+
+**Features:**
+- **Configuration-based**: Define sandboxing rules in simple configuration files
+- **Generic**: Works with any application, not just Cursor
+- **Minimal configuration**: Only requires executable, args, and rw_paths
+- **Sensible defaults**: Automatically handles system paths, environment variables, and security checks
+- **Multiple arguments**: Supports multiple files/projects
+- **Editable**: Use `--edit` flag to modify configurations
+- **Dryrun support**: Preview commands before execution
+
+**Usage:**
+```bash
+# Run Cursor (equivalent to bcursor.sh)
+./bwrapper cursor
+./bwrapper cursor file1.txt file2.txt project
+
+# Edit configurations
+./bwrapper --edit cursor
+
+# List available configurations
+./bwrapper --list
+```
+
+See [bwrapper-README.md](bwrapper-README.md) for detailed documentation.
 
 ### Alternative Implementation (`bwrap_alternatives/bcursor_uses_work.sh`)
 An alternative approach that creates a completely isolated home directory (`~/.cursor`) for the sandboxed Cursor instance. The project directory is mounted at `/home/app/work` within the sandbox. This provides stronger isolation but requires separate configuration management.
@@ -90,6 +127,8 @@ It's worth noting though that similar networking issues arose with very restrict
 
 ## Usage
 
+### Using bcursor.sh
+
 You can now use `bcursor` just as you would use the `cursor` command.
 
   * **Open the current directory:**
@@ -110,6 +149,62 @@ You can now use `bcursor` just as you would use the `cursor` command.
     ```bash
     bcursor ~/projects/my-website/src/app.js
     ```
+
+  * **Open multiple files/projects:**
+
+    ```bash
+    bcursor file1.txt file2.txt ~/projects/my-website
+    ```
+
+  * **Preview the bwrap command (dryrun):**
+
+    ```bash
+    bcursor --dryrun ~/projects/my-website
+    ```
+
+### Using bwrapper
+
+The generic helper provides the same functionality with additional features:
+
+  * **Run Cursor with configuration:**
+
+    ```bash
+    ./bwrapper cursor
+    ./bwrapper cursor file1.txt file2.txt project
+    ```
+
+  * **Edit configurations:**
+
+    ```bash
+    ./bwrapper --edit cursor
+    ```
+
+  * **List available configurations:**
+
+    ```bash
+    ./bwrapper --list
+    ```
+
+  * **Preview commands:**
+
+    ```bash
+    ./bwrapper --dryrun cursor
+    ```
+
+### Comparing Scripts
+
+Use the included comparison script to verify that both implementations produce identical results:
+
+```bash
+# Compare with no arguments
+./compare-scripts.sh
+
+# Compare with specific files
+./compare-scripts.sh file1.txt file2.txt project
+
+# Show help
+./compare-scripts.sh --help
+```
 
 ## Security Considerations & Trade-offs
 
@@ -185,6 +280,12 @@ I started with `firejail` but encountered several issues that made it less suita
 ```
 bwrap-cursor/
 ├── bcursor.sh                           # Main implementation (shared config)
+├── bwrapper                             # Generic sandboxing helper
+├── bwrapper-README.md                  # Documentation for bwrapper
+├── compare-scripts.sh                   # Script to compare bcursor.sh and bwrapper
+├── configurations/                      # Configuration files for bwrapper
+│   ├── cursor.conf                     # Cursor configuration
+│   └── firefox.conf                    # Example Firefox configuration
 ├── bwrap_alternatives/
 │   ├── bcursor_uses_work.sh            # Alternative implementation (isolated config)
 │   └── README.md                       # Documentation about alternative approach
@@ -197,5 +298,8 @@ bwrap-cursor/
 ```
 
 - **`bcursor.sh`**: The primary script that most users should use
+- **`bwrapper`**: Generic sandboxing helper with configuration support
+- **`compare-scripts.sh`**: Tool to verify both scripts produce identical results
+- **`configurations/`**: Configuration files for bwrapper
 - **`bwrap_alternatives/`**: Contains alternative implementations with different security models
 - **`do_not_use/`**: Contains experimental or abandoned implementations for reference
