@@ -20,7 +20,7 @@ An AI might misinterpret a broad command. A request to "clean up the project" co
 
 `bcursor` uses the Linux utility `bubblewrap` to construct a temporary, isolated environment for the Cursor process on-the-fly. Think of it as building a secure, virtual room for the application to run in. The rules for this room are very strict:
 
-1.  **Default Read-Only:** The entire host filesystem, from the root (`/`) down, is mounted as **read-only**. By default, Cursor can see your files but cannot change or delete any of them.
+1.  **Default Read-Only:** The entire host filesystem, from the root (`/`) down, is mounted as **read-only**. By default, Cursor can see your files but cannot change or delete any of them. This read-only approach was chosen specifically to avoid networking issues that arise when trying to whitelist individual system directories for DNS resolution.
 
 2.  **Creating Writable "Portholes":** The script then selectively makes a few specific locations writable. These are the only places Cursor can make changes:
 
@@ -119,6 +119,8 @@ You can now use `bcursor` just as you would use the `cursor` command.
   * **GPU Passthrough:** The script automatically detects and passes through GPU devices (`/dev/dri`, NVIDIA devices) for hardware acceleration. This is necessary for smooth performance but grants the sandboxed application access to GPU resources.
 
   * **X11/Wayland Access:** The script passes through display server sockets and environment variables, which is necessary for GUI functionality but allows the sandboxed application to interact with your display system.
+
+  * **$HOME Access:** The entire `$HOME` directory remains accessible (read-only) to the sandboxed application. This is a security consideration, as Cursor can read all files in your home directory. However, this is similar to how most desktop applications operate - they typically have access to your home directory for configuration, themes, and other user data. The key difference is that `bcursor` prevents Cursor from *modifying* anything outside your project directory.
 
 
 ## Removing DBUS access
