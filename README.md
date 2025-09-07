@@ -2,7 +2,7 @@
 
 # bcursor: Run the Cursor Editor in a Secure Sandbox
 
-`bcursor` is a shell script for Ubuntu/Linux that launches the [Cursor](https://cursor.sh/) code editor within a secure, isolated filesystem sandbox using `bubblewrap` (`bwrap`). 
+`bcursor` is a shell script for Ubuntu/Linux that launches the [Cursor](https://cursor.sh/) code editor within a secure, isolated filesystem sandbox using `bubblewrap` (`bwrap`). A similar approach is likely to work for VS Code and other Electron-based applications. 
 
 The primary goal is to provide peace of mind. You can leverage Cursor's powerful AI features for code generation and refactoring with confidence, knowing that the application is restricted from making accidental or unwanted changes to files outside of your specified project directory.
 
