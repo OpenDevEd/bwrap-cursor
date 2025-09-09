@@ -12,8 +12,10 @@ use File::Path qw(make_path);
 use File::Basename;
 use Cwd 'abs_path', 'getcwd';
 use Getopt::Long;
+use YAML::Tiny;
 
 my $CONFIG_DIR = "./configurations";
+my $PROFILE_DIR = "$ENV{HOME}/.config/bwrapper/profiles";
 
 # Parse command line arguments
 my $edit_mode = 0;
@@ -116,11 +118,18 @@ Command-line options (when using --exec):
   --save <config>      # Save CLI options as configuration file
   --dryrun             # Show the command that would be executed
 
-Configuration files are stored in ./configurations/
-Each configuration file should contain:
+Configuration files can be stored in:
+- ./configurations/ (regular .conf files)
+- ~/.config/bwrapper/profiles/ (profile .profile files)
+
+Configuration file format:
 - executable: The program to run
 - args: Array of arguments to pass to the program (optional)
 - rw_paths: Array of paths to bind read-write (optional)
+
+Profile resolution:
+- If config name contains "/" or ends with ".profile", treat as file path
+- Otherwise, look for ~/.config/bwrapper/profiles/<name>.profile
 
 The script provides sensible defaults for:
 - Entire filesystem is read-only (--ro-bind / /)
@@ -132,6 +141,12 @@ The script provides sensible defaults for:
 Examples:
   # Using configuration file:
   bwrapper cursor /path/to/project
+
+  # Using profile configuration:
+  bwrapper myprofile /path/to/project  # looks for ~/.config/bwrapper/profiles/myprofile.profile
+
+  # Using profile file with path:
+  bwrapper /path/to/some.profile /path/to/project
 
   # Using command-line options:
   bwrapper --exec /usr/bin/cursor --arg=-a --arg=-b --rw=$HOME/.config/Cursor --rw=$HOME/.cache/Cursor /path/to/project
@@ -151,29 +166,49 @@ Examples:
   rw_paths:
     - $HOME/.config/Cursor
     - $HOME/.cache/Cursor
+
+Requirements:
+sudo apt install libyaml-tiny-perla
 EOF
 }
 
 sub list_configurations {
     make_path($CONFIG_DIR) unless -d $CONFIG_DIR;
+    make_path($PROFILE_DIR) unless -d $PROFILE_DIR;
     
     my @configs = glob("$CONFIG_DIR/*.conf");
-    if (@configs) {
+    my @profiles = glob("$PROFILE_DIR/*.profile");
+    
+    if (@configs || @profiles) {
         print "Available configurations:\n";
-        foreach my $config (@configs) {
-            my $name = basename($config, '.conf');
-            print "  $name\n";
+        
+        if (@configs) {
+            print "  Regular configurations:\n";
+            foreach my $config (@configs) {
+                my $name = basename($config, '.conf');
+                print "    $name\n";
+            }
+        }
+        
+        if (@profiles) {
+            print "  Profile configurations:\n";
+            foreach my $profile (@profiles) {
+                my $name = basename($profile, '.profile');
+                print "    $name\n";
+            }
         }
     } else {
-        print "No configurations found in $CONFIG_DIR\n";
+        print "No configurations found in $CONFIG_DIR or $PROFILE_DIR\n";
     }
 }
 
 sub edit_configuration {
     my $config_name = shift;
-    my $config_file = "$CONFIG_DIR/$config_name.conf";
+    my $config_file = resolve_config_path($config_name);
     
-    make_path($CONFIG_DIR) unless -d $CONFIG_DIR;
+    # Ensure the directory exists for the config file
+    my $config_dir = dirname($config_file);
+    make_path($config_dir) unless -d $config_dir;
     
     my $editor = $ENV{EDITOR} || $ENV{VISUAL} || 'nano' || 'vi';
     system($editor, $config_file) == 0 or die "Failed to edit configuration: $!\n";
@@ -181,7 +216,7 @@ sub edit_configuration {
 
 sub load_configuration {
     my $config_name = shift;
-    my $config_file = "$CONFIG_DIR/$config_name.conf";
+    my $config_file = resolve_config_path($config_name);
     
     unless (-f $config_file) {
         die "Configuration file not found: $config_file\n";
@@ -191,47 +226,38 @@ sub load_configuration {
         die "Configuration file not readable: $config_file\n";
     }
     
-    my $config = {};
-    open my $fh, '<', $config_file or die "Cannot read $config_file: $!\n";
-    
-    my $current_section = '';
-    my $current_array = [];
-    my $current_hash = {};
-    
-    while (my $line = <$fh>) {
-        chomp $line;
-        next if $line =~ /^#/ || $line =~ /^\s*$/;  # Skip comments and empty lines
-        
-        # Check if this is an indented line (hash entry)
-        if ($line =~ /^\s+(\w+):\s*(.+)$/ && $current_section eq 'hash') {
-            $current_hash->{$1} = $2;
-        } elsif ($line =~ /^\s*-\s*(.+)$/ && $current_section eq 'array') {
-            push @$current_array, $1;
-        } elsif ($line =~ /^(\w+):\s*(.*)$/) {
-            my ($key, $value) = ($1, $2);
-            
-            if ($value eq '[]') {
-                $config->{$key} = [];
-                $current_array = $config->{$key};
-                $current_section = 'array';
-            } elsif ($value eq '{}') {
-                $config->{$key} = {};
-                $current_hash = $config->{$key};
-                $current_section = 'hash';
-            } else {
-                $config->{$key} = $value;
-                $current_section = '';
-            }
-        }
+    my $yaml = YAML::Tiny->read($config_file);
+    if (!$yaml) {
+        die "Error parsing YAML file $config_file: " . YAML::Tiny->errstr . "\n";
     }
     
-    close $fh;
+    my $config = $yaml->[0] || {};
+    
+    # Ensure required fields exist with defaults
+    $config->{args} ||= [];
+    $config->{rw_paths} ||= [];
+    $config->{env_vars} ||= {};
+    $config->{additional_bwrap_args} ||= [];
+    
     return $config;
 }
 
 sub resolve_abs_path {
     my $path = shift;
     return abs_path($path) || $path;
+}
+
+sub resolve_config_path {
+    my $config_name = shift;
+    
+    # If config name contains "/" or ends with ".profile", treat it as a file path
+    if ($config_name =~ /\// || $config_name =~ /\.profile$/) {
+        return resolve_abs_path($config_name);
+    }
+    
+    # Otherwise, look for it in the profile directory
+    my $profile_file = "$PROFILE_DIR/$config_name.profile";
+    return resolve_abs_path($profile_file);
 }
 
 sub check_not_root_dirs {
@@ -284,6 +310,7 @@ sub setup_bwrap_environment {
     my $work_path = shift;
     my $dryrun = shift;
     my $files_ref = shift;
+    my $executable = shift;
     my @files = @$files_ref;
     
     # Run security checks (always enabled by default)
@@ -412,6 +439,7 @@ sub setup_bwrap_environment {
         }
     }
     
+    
     return @bwrap_args;
 }
 
@@ -423,7 +451,7 @@ sub determine_project_path_and_targets {
     
     if (@files == 0) {
         $project_path = getcwd();
-        @targets = ($project_path);
+        @targets = ();  # No targets when no files specified
     } else {
         # Use the first file/directory to determine the project path
         my $first_file = resolve_abs_path($files[0]);
@@ -451,19 +479,26 @@ sub execute_bwrap_command {
         system('which', 'bwrap') == 0 or die "Error: bwrap command not found. Please install bubblewrap.\n";
     }
     
+    # Use the arguments as provided
+    my @exec_args = @$exec_args_ref;
+    
     # Execute or show command
     if ($dryrun) {
+        print "Executable: $executable\n";
+        print "Arguments: " . join(" ", @exec_args) . "\n";
+        print "Bwrap arguments: " . scalar(@$bwrap_args_ref) . " total\n";
+        print "\nFull bwrap command:\n";
         print "bwrap \\\n";
         foreach my $arg (@$bwrap_args_ref) {
             print "  \"$arg\" \\\n";
         }
         print "  -- $executable";
-        foreach my $arg (@$exec_args_ref) {
+        foreach my $arg (@exec_args) {
             print " \"$arg\"";
         }
         print "\n";
     } else {
-        exec 'bwrap', @$bwrap_args_ref, '--', $executable, @$exec_args_ref;
+        exec 'bwrap', @$bwrap_args_ref, '--', $executable, @exec_args;
     }
 }
 
@@ -472,7 +507,21 @@ sub run_with_configuration {
     my @files = @_;
     my $dryrun = pop @files;  # Last parameter is dryrun flag
     
+    if ($dryrun) {
+        print "=== BWAPPER DRYRUN MODE ===\n";
+        print "Loading profile: $config_name\n";
+        my $config_path = resolve_config_path($config_name);
+        print "Path: $config_path\n";
+    }
+    
     my $config = load_configuration($config_name);
+    
+    if ($dryrun) {
+        print "Config loaded:\n";
+        print "  executable: " . ($config->{executable} || 'undef') . "\n";
+        print "  args: [" . join(", ", @{$config->{args} || []}) . "]\n";
+        print "  additional_bwrap_args: [" . join(", ", @{$config->{additional_bwrap_args} || []}) . "]\n";
+    }
     
     # Determine project path and targets
     my ($project_path, @targets) = determine_project_path_and_targets(@files);
@@ -486,13 +535,15 @@ sub run_with_configuration {
         $config->{home_path},
         $config->{work_path},
         $dryrun,
-        \@files
+        \@files,
+        $config->{executable}
     );
     
     # Build command
     my $executable = $config->{executable};
     my @exec_args = @{$config->{args} || []};
     push @exec_args, @targets;
+    
     
     # Execute command using shared logic
     execute_bwrap_command($executable, \@bwrap_args, \@exec_args, $dryrun);
@@ -520,12 +571,14 @@ sub run_with_cli_options {
         $home_path,
         $work_path,
         $dryrun,
-        \@files  # Pass original files for home isolation as reference
+        \@files,  # Pass original files for home isolation as reference
+        $executable
     );
     
     # Build command
     my @exec_args = @$args_ref;
     push @exec_args, @targets;
+    
     
     # Execute command using shared logic
     execute_bwrap_command($executable, \@bwrap_args, \@exec_args, $dryrun);
@@ -544,10 +597,11 @@ sub save_cli_options_as_config {
         die "Error: Configuration name required when using --save\nUsage: $0 --exec <program> --save <config_name> [options]\n";
     }
     
-    my $config_file = "$CONFIG_DIR/$config_name.conf";
+    my $config_file = resolve_config_path($config_name);
     
     # Ensure config directory exists
-    make_path($CONFIG_DIR) unless -d $CONFIG_DIR;
+    my $config_dir = dirname($config_file);
+    make_path($config_dir) unless -d $config_dir;
     
     # Check if config file already exists
     if (-f $config_file) {
