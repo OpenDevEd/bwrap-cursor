@@ -239,7 +239,39 @@ sub load_configuration {
     $config->{env_vars} ||= {};
     $config->{additional_bwrap_args} ||= [];
     
+    # Expand ~ to $ENV{HOME} in all string values
+    $config = expand_tilde_in_config($config);
+    
     return $config;
+}
+
+sub expand_tilde_in_config {
+    my $config = shift;
+    my $home = $ENV{HOME} || $ENV{USERPROFILE} || '';
+    
+    # Recursively process the config hash
+    if (ref($config) eq 'HASH') {
+        my %expanded = ();
+        for my $key (keys %$config) {
+            $expanded{$key} = expand_tilde_in_config($config->{$key});
+        }
+        return \%expanded;
+    }
+    elsif (ref($config) eq 'ARRAY') {
+        my @expanded = ();
+        for my $item (@$config) {
+            push @expanded, expand_tilde_in_config($item);
+        }
+        return \@expanded;
+    }
+    elsif (defined($config) && $config =~ /^~/) {
+        # Replace leading ~ with home directory
+        $config =~ s/^~/$home/;
+        return $config;
+    }
+    else {
+        return $config;
+    }
 }
 
 sub resolve_abs_path {

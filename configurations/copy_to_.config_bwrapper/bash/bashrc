@@ -1,0 +1,41 @@
+# bwrapper restricted bash configuration
+# This file is automatically loaded when running bash in a restricted environment
+
+# First, load the user's normal .bashrc if it exists
+if [ -f "$HOME/.bashrc" ]; then
+    source "$HOME/.bashrc"
+fi
+
+# Then check if we're in a restricted environment and override the prompt
+if [ "$BWRAP_RESTRICTED" = "1" ]; then
+    # Set the restricted prompt (overrides any prompt from user's .bashrc)
+    export PS1="\[\033[1;31m\]\u@\h\[\033[0m\]:\[\033[1;33m\]\w\[\033[0m\]\[\033[1;31m\] [RESTRICTED]\[\033[0m\]\$ "
+    
+    # Override history settings for restricted environment
+    # Use a separate history file in the bwrapper logs directory
+    export HISTFILE="$HOME/.config/bwrapper/logs/bash/bash_history"
+    
+    # Ensure the logs directory exists
+    mkdir -p "$HOME/.config/bwrapper/logs/bash"
+    
+    # Keep the same history behavior as main .bashrc but with separate file
+    export HISTCONTROL=ignoreboth
+    shopt -s histappend
+    export HISTFILESIZE=
+    export HISTSIZE=
+    export HISTTIMEFORMAT="[%Y-%m-%d %H:%M:%S] "
+    PROMPT_COMMAND="history -a; $PROMPT_COMMAND"
+    
+    # Show a welcome message
+    echo "=========================================="
+    echo "You are running in a RESTRICTED environment"
+    echo "This is a bwrap sandbox for security"
+    echo "Current directory: $(pwd)"
+    echo "User: $(whoami)"
+    echo "History file: $HISTFILE"
+    echo "=========================================="
+    echo ""
+
+    alias bwstatus="echo 'BWRAP_RESTRICTED'"
+    alias bwhistory="cat $HISTFILE"
+fi
